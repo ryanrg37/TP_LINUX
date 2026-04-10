@@ -1,0 +1,60 @@
+#!/usr/bin/bash
+
+set -e
+
+WP_URL="https://fr.wordpress.org/wordpress-6.9.4-fr_FR.tar.gz"
+
+DBNAME=$1
+DBUSER=$2
+DBPASS=$3
+SERVERNAME=$4
+
+cd /var/www
+
+echo "Téléchargement..."
+sudo wget -P /tmp $WP_URL
+
+echo "Extraction..."
+sudo tar -xzf /tmp/wordpress-6.9.4-fr_FR.tar.gz -C /var/www
+
+echo "Config wp-config..."
+WPCONFIG="/var/www/wordpress/wp-config.php"
+sudo cp /var/www/wordpress/wp-config-sample.php $WPCONFIG
+
+sudo sed -i "s/database_name_here/$DBNAME/" "$WPCONFIG"
+sudo sed -i "s/username_here/$DBUSER/" "$WPCONFIG"
+sudo sed -i "s/password_here/$DBPASS/" "$WPCONFIG"
+
+echo "Installation PHP..."
+sudo apt update
+sudo apt install php8.4 php-mysql -y
+
+echo "Vhost Apache..."
+sudo tee /etc/apache2/sites-available/$DBUSER.conf > /dev/null <<EOF
+<VirtualHost *:80>
+
+    ServerName ${SERVERNAME}
+    DocumentRoot /var/www/wordpress
+
+</VirtualHost>
+EOF
+
+echo "Activation Apache..."
+sudo a2ensite $DBUSER.conf
+sudo a2enmod rewrite
+sudo systemctl reload apache2
+
+echo "MariaDB..."
+sudo apt install mariadb-server -y
+
+sudo mysql -e "
+CREATE DATABASE IF NOT EXISTS ${DBNAME};
+CREATE USER IF NOT EXISTS '${DBUSER}'@'localhost' IDENTIFIED BY '${DBPASS}';
+GRANT ALL PRIVILEGES ON ${DBNAME}.* TO '${DBUSER}'@'localhost';
+FLUSH PRIVILEGES;
+"
+
+echo "Permissions..."
+sudo chown -R www-data:www-data /var/www/wordpress
+
+echo "Terminé"
